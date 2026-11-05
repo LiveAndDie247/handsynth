@@ -6,10 +6,13 @@
 <title>Hand Synth</title>
 <style>
   :root {
-    --red: #e10600;
-    --red-dim: #5a0200;
+    --red: #ff2238;
+    --red-dim: #4a0610;
+    --blue: #1f8bff;
+    --blue-dim: #0a2a5c;
     --bg: #000;
-    --fg: #f2f2f2;
+    --fg: #e8eef8;
+    --mute: #5d6880;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -18,197 +21,452 @@
     overflow: hidden; touch-action: manipulation;
   }
   #stage { position: fixed; inset: 0; }
-  canvas {
+  #canvas {
     width: 100%; height: 100%; display: block;
-    object-fit: cover; background: #050000;
+    object-fit: cover; background: #00030a;
   }
   video { display: none; }
 
-  /* Side meters: left = filter, right = pitch */
-  .meter {
-    position: fixed; top: 12%; bottom: 12%; width: 10px;
-    border: 1px solid var(--red-dim); border-radius: 5px; overflow: hidden;
-    background: rgba(20,0,0,.6);
+  /* Scanlines + vignette over everything */
+  #fx {
+    position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background:
+      repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.22) 2px 3px),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.8) 100%);
   }
-  .meter.left { left: 14px; } .meter.right { right: 14px; }
+
+  /* Side meters: left = filter (blue), right = pitch (red) */
+  .meter {
+    position: fixed; top: 22%; bottom: 22%; width: 8px; z-index: 2;
+    border: 1px solid var(--blue-dim); border-radius: 4px; overflow: hidden;
+    background: rgba(0,4,16,.6);
+  }
+  .meter.left { left: 12px; }
+  .meter.right { right: 12px; border-color: var(--red-dim); }
   .meter > div {
     position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
-    background: linear-gradient(to top, var(--red-dim), var(--red));
-    box-shadow: 0 0 12px var(--red);
     transition: height 60ms linear;
   }
+  .meter.left > div { background: linear-gradient(to top, var(--blue-dim), var(--blue)); box-shadow: 0 0 12px var(--blue); }
+  .meter.right > div { background: linear-gradient(to top, var(--red-dim), var(--red)); box-shadow: 0 0 12px var(--red); }
 
   #hud {
-    position: fixed; left: 0; right: 0; top: 0;
-    padding: max(14px, env(safe-area-inset-top)) 36px 14px;
-    display: flex; justify-content: space-between; gap: 12px;
-    background: linear-gradient(to bottom, rgba(0,0,0,.85), transparent);
+    position: fixed; left: 0; right: 0; top: 0; z-index: 2;
+    padding: max(12px, env(safe-area-inset-top)) 30px 10px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.9), transparent);
     font-size: 13px; letter-spacing: .05em; pointer-events: none;
   }
-  #hud .label { color: #888; font-size: 10px; text-transform: uppercase; }
-  #hud .val { color: var(--red); font-size: 20px; font-weight: 700; text-shadow: 0 0 10px rgba(225,6,0,.6); }
-  #hud .off { color: #444; text-shadow: none; }
+  #hud .label { color: var(--mute); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+  #hud .val { font-size: 19px; font-weight: 700; }
+  #hud .val.red  { color: var(--red);  text-shadow: 0 0 10px rgba(255,34,56,.6); }
+  #hud .val.blue { color: var(--blue); text-shadow: 0 0 10px rgba(31,139,255,.6); }
+  #hud .val.off { color: #333a48; text-shadow: none; }
+  #hud .mid { text-align: center; }
+  #hud .mid .val2 { font-size: 11px; color: var(--fg); margin: 2px 0; }
+  #hud .mid .val2.lock { color: var(--blue); }
   #hud .right { text-align: right; }
 
-  #controls {
-    position: fixed; left: 0; right: 0; bottom: 0;
-    padding: 14px 36px max(16px, env(safe-area-inset-bottom));
-    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
-    background: linear-gradient(to top, rgba(0,0,0,.9), transparent);
+  /* Parameter panels */
+  #panels {
+    position: fixed; left: 0; right: 0; z-index: 2;
+    top: calc(max(12px, env(safe-area-inset-top)) + 50px);
+    padding: 0 28px; display: flex; justify-content: space-between; gap: 6px;
+    pointer-events: none; font-size: 9px; letter-spacing: .05em;
   }
+  #panels.hidden { display: none; }
+  .panel {
+    width: 32%; max-width: 200px; padding: 5px 7px 6px;
+    background: rgba(0,5,18,.6); border: 1px solid var(--blue-dim); border-radius: 3px;
+    transition: opacity .2s;
+  }
+  .panel.red { border-color: var(--red-dim); }
+  .panel.face { border-image: linear-gradient(90deg, var(--blue-dim), var(--red-dim)) 1; }
+  .panel.idle { opacity: .45; }
+  .panel h3 { font-size: 9px; font-weight: 700; margin-bottom: 3px; color: var(--blue); letter-spacing: .1em; }
+  .panel.red h3 { color: var(--red); }
+  .panel.face h3 { background: linear-gradient(90deg, var(--blue), var(--red)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .row { margin-top: 3px; }
+  .row .top { display: flex; justify-content: space-between; gap: 4px; white-space: nowrap; }
+  .row .k { color: var(--fg); overflow: hidden; text-overflow: ellipsis; }
+  .row .k em { font-style: normal; color: var(--mute); }
+  .row .v { color: var(--fg); }
+  .row .bar { height: 2px; margin-top: 2px; background: rgba(255,255,255,.08); position: relative; overflow: hidden; }
+  .row .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+  .panel.red .row .bar i { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .panel.face .row .bar i { background: linear-gradient(90deg, var(--blue), var(--red)); }
+
+  #bottom {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
+    padding: 8px 28px max(14px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(0,0,0,.92) 60%, transparent);
+  }
+  #scope { display: block; width: 100%; height: 46px; margin-bottom: 8px; }
+  #controls { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
   button, select {
-    font: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
-    color: var(--fg); background: #0d0000; border: 1px solid var(--red-dim);
-    padding: 9px 12px; border-radius: 6px;
+    font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--fg); background: #000510; border: 1px solid var(--blue-dim);
+    padding: 8px 10px; border-radius: 4px;
   }
-  button:active { background: var(--red-dim); }
-  button.on { border-color: var(--red); color: var(--red); }
+  select { border-color: var(--red-dim); }
+  button:active { background: var(--blue-dim); }
+  button.on { border-color: var(--blue); color: var(--blue); box-shadow: 0 0 8px rgba(31,139,255,.35); }
+  #muteBtn.on { border-color: var(--red); color: var(--red); box-shadow: 0 0 8px rgba(255,34,56,.35); }
 
   #overlay {
     position: fixed; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 18px; text-align: center;
-    background: radial-gradient(circle at center, #1a0000 0%, #000 70%);
-    padding: 24px; z-index: 10;
+    align-items: center; justify-content: center; gap: 16px; text-align: center;
+    background:
+      repeating-linear-gradient(90deg, rgba(31,139,255,.05) 0 1px, transparent 1px 32px),
+      repeating-linear-gradient(0deg, rgba(31,139,255,.05) 0 1px, transparent 1px 32px),
+      radial-gradient(circle at center, #0a0418 0%, #000 70%);
+    padding: 24px; z-index: 10; overflow-y: auto;
   }
   #overlay h1 {
-    font-size: 34px; letter-spacing: .3em; color: var(--red);
-    text-shadow: 0 0 24px rgba(225,6,0,.7);
+    font-size: 34px; letter-spacing: .3em; color: var(--fg);
+    text-shadow: -3px 0 var(--blue), 3px 0 var(--red), 0 0 28px rgba(255,34,56,.5);
   }
-  #overlay p { color: #999; font-size: 13px; line-height: 1.6; max-width: 340px; }
-  #overlay p b { color: var(--fg); font-weight: normal; }
+  #overlay .map { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 720px; }
+  #overlay .map div {
+    text-align: left; font-size: 11px; line-height: 1.7; color: #9aa4b8;
+    border: 1px solid var(--blue-dim); padding: 8px 12px; border-radius: 4px; min-width: 200px;
+    background: rgba(0,5,18,.6);
+  }
+  #overlay .map div.r { border-color: var(--red-dim); }
+  #overlay .map b { display: block; font-size: 10px; letter-spacing: .15em; margin-bottom: 2px; }
+  #overlay .map .r b { color: var(--red); }
+  #overlay .map .l b { color: var(--blue); }
+  #overlay .map .f b { background: linear-gradient(90deg, var(--blue), var(--red)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   #start {
-    font-size: 16px; padding: 16px 40px; border: 2px solid var(--red);
-    color: var(--red); background: transparent; border-radius: 40px;
-    box-shadow: 0 0 20px rgba(225,6,0,.4), inset 0 0 20px rgba(225,6,0,.2);
+    font-size: 15px; padding: 14px 40px; border: 2px solid var(--red);
+    color: var(--fg); background: transparent; border-radius: 40px;
+    box-shadow: -3px 0 14px rgba(31,139,255,.5), 3px 0 14px rgba(255,34,56,.5);
   }
   #start:disabled { opacity: .5; }
-  #status { color: var(--red); font-size: 12px; min-height: 1.2em; }
+  #status { color: var(--blue); font-size: 12px; min-height: 1.2em; }
 </style>
 </head>
 <body>
 
 <div id="stage"><canvas id="canvas"></canvas></div>
 <video id="video" playsinline muted></video>
+<div id="fx"></div>
 
 <div class="meter left"><div id="meterL"></div></div>
 <div class="meter right"><div id="meterR"></div></div>
 
 <div id="hud">
   <div>
-    <div class="label">L · Filter</div>
-    <div class="val off" id="cutoffVal">—</div>
+    <div class="label">L · Tone / Cutoff</div>
+    <div class="val blue off" id="cutoffVal">—</div>
+  </div>
+  <div class="mid">
+    <div class="label">Face · Mesh</div>
+    <div class="val2" id="faceVal">—</div>
+    <div class="label" id="fpsVal"></div>
   </div>
   <div class="right">
-    <div class="label">R · Pitch</div>
-    <div class="val off" id="pitchVal">—</div>
+    <div class="label">R · Voice / Pitch</div>
+    <div class="val red off" id="pitchVal">—</div>
   </div>
 </div>
 
-<div id="controls">
-  <select id="wave">
-    <option value="sawtooth">Saw</option>
-    <option value="square">Square</option>
-    <option value="triangle">Triangle</option>
-    <option value="sine">Sine</option>
-  </select>
-  <button id="quantBtn">Snap: Off</button>
-  <button id="swapBtn">Swap L/R</button>
-  <button id="camBtn">Flip Cam</button>
-  <button id="muteBtn">Mute</button>
+<div id="panels">
+  <div class="panel" id="panelL"></div>
+  <div class="panel face" id="panelF"></div>
+  <div class="panel red" id="panelR"></div>
+</div>
+
+<div id="bottom">
+  <canvas id="scope"></canvas>
+  <div id="controls">
+    <select id="preset" title="Preset"></select>
+    <select id="wave" title="Main oscillator">
+      <option value="sawtooth">Saw</option>
+      <option value="square">Square</option>
+      <option value="triangle">Triangle</option>
+      <option value="sine">Sine</option>
+    </select>
+    <select id="scale" title="Snap to scale">
+      <option value="off">Snap: Off</option>
+      <option value="chromatic">Chromatic</option>
+      <option value="major">Major</option>
+      <option value="minor">Minor</option>
+      <option value="penta">Pentatonic</option>
+      <option value="minpenta">Min Penta</option>
+      <option value="blues">Blues</option>
+      <option value="dorian">Dorian</option>
+    </select>
+    <select id="key" title="Key"></select>
+    <button class="fxBtn" data-fx="drive">Drive</button>
+    <button class="fxBtn" data-fx="delay">Echo</button>
+    <button class="fxBtn" data-fx="verb">Reverb</button>
+    <button class="fxBtn" data-fx="face">Face FX</button>
+    <button id="swapBtn">Swap L/R</button>
+    <button id="camBtn">Flip Cam</button>
+    <button id="dataBtn" class="on">Data</button>
+    <button id="muteBtn">Mute</button>
+  </div>
 </div>
 
 <div id="overlay">
   <h1>HAND SYNTH</h1>
-  <p>
-    <b>Right hand</b> up/down → pitch<br>
-    <b>Left hand</b> up/down → lowpass filter<br>
-    Sound plays while your right hand is visible.
-  </p>
+  <div class="map">
+    <div class="r"><b>RIGHT HAND · VOICE</b>
+      height → pitch<br>side to side → pan<br>thumb–index pinch → vibrato<br>
+      middle finger → detune<br>ring finger → harmony<br>pinky → sub oscillator</div>
+    <div class="l"><b>LEFT HAND · TONE</b>
+      height → filter cutoff<br>side to side → echo time<br>thumb–index pinch → resonance<br>
+      middle finger → drive<br>ring finger → echo feedback<br>pinky → reverb</div>
+    <div class="f"><b>FACE · MOUTH</b>
+      open mouth → talk-box vowel<br>smile → vowel brightness<br>pucker → "oo"<br>
+      raise brows → vibrato speed<br>tilt head → pitch bend</div>
+  </div>
+  <p style="color:#5d6880;font-size:11px">Curl a finger to turn its control down, straighten it to turn it up.<br>Sound plays while your right hand is in view.</p>
   <button id="start">Start</button>
   <div id="status"></div>
 </div>
 
 <script type="module">
-import { FilesetResolver, HandLandmarker }
+import { FilesetResolver, HandLandmarker, FaceLandmarker }
   from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
-const WASM_URL  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
-const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const WASM_URL   = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const FACE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-// ---------- Ranges ----------
-const PITCH_MIN = 110, PITCH_MAX = 1760;   // A2 .. A6
-const CUT_MIN   = 80,  CUT_MAX   = 12000;  // Hz
+const RED = "#ff2238", BLUE = "#1f8bff", BLUE_HI = "#7cc4ff";
+const CUT_MIN = 80, CUT_MAX = 12000;
+const K = 2;   // canvas supersampling for crisp wireframes
+
+// ---------- Presets ----------
+const PRESETS = {
+  lead:  { name: "Lead",  w1: "sawtooth", w2: "sawtooth", det: 6,  detMax: 30, sub: .35, harm: .30, harmInt: 7,  q: 6,  atk: .03, rel: .15, lo: 110,  hi: 1760, fx: { drive: false, delay: true,  verb: true  } },
+  acid:  { name: "Acid",  w1: "sawtooth", w2: "square",   det: 3,  detMax: 14, sub: .25, harm: .15, harmInt: 12, q: 16, atk: .01, rel: .08, lo: 55,   hi: 880,  fx: { drive: true,  delay: true,  verb: false } },
+  pad:   { name: "Pad",   w1: "triangle", w2: "sawtooth", det: 12, detMax: 40, sub: .30, harm: .45, harmInt: 7,  q: 3,  atk: .35, rel: .9,  lo: 110,  hi: 1320, fx: { drive: false, delay: true,  verb: true  } },
+  bass:  { name: "Bass",  w1: "square",   w2: "sawtooth", det: 4,  detMax: 18, sub: .75, harm: .10, harmInt: 12, q: 8,  atk: .01, rel: .1,  lo: 41.2, hi: 330,  fx: { drive: true,  delay: false, verb: false } },
+  glass: { name: "Glass", w1: "sine",     w2: "triangle", det: 2,  detMax: 12, sub: .10, harm: .55, harmInt: 12, q: 2,  atk: .02, rel: .6,  lo: 220,  hi: 2640, fx: { drive: false, delay: true,  verb: true  } },
+  chip:  { name: "Chip",  w1: "square",   w2: "square",   det: 0,  detMax: 8,  sub: .20, harm: .35, harmInt: 19, q: 1,  atk: .005,rel: .05, lo: 130,  hi: 2093, fx: { drive: false, delay: true,  verb: false } },
+};
+const SCALES = {
+  chromatic: [0,1,2,3,4,5,6,7,8,9,10,11],
+  major:     [0,2,4,5,7,9,11],
+  minor:     [0,2,3,5,7,8,10],
+  penta:     [0,2,4,7,9],
+  minpenta:  [0,3,5,7,10],
+  blues:     [0,3,5,6,7,10],
+  dorian:    [0,2,3,5,7,9,10],
+};
+
+// Ordered face landmark loops
+const FACE_OVAL = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const LIPS_OUT  = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
+const LIPS_IN   = [78,191,80,81,82,13,312,311,310,415,308,324,318,402,317,14,87,178,88,95];
 
 // ---------- DOM ----------
 const $ = id => document.getElementById(id);
 const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+const scope = $("scope"), sctx = scope.getContext("2d");
 const statusEl = $("status");
 
 // ---------- State ----------
-let landmarker = null, stream = null;
-let facing = "user";          // "user" = front camera
-let swapHands = false;
-let quantize = false;
-let muted = false;
-let lastVideoTime = -1;
-let audio = null;
+let handLm = null, faceLm = null, stream = null, audio = null;
+let facing = "user", mirror = true, swapHands = false, muted = false;
+let preset = PRESETS.lead, scale = "off", keyRoot = 0;
+const fx = { drive: false, delay: true, verb: true, face: true };
+let lastVideoTime = -1, frameNo = 0, W = 640, H = 480;
+let hands = { right: null, left: null }, face = null, vals = null;
+let fpsCount = 0, fpsT = performance.now();
+let fBuf, tBuf;
 
-// Hand-connection pairs for drawing a skeleton
+// Smoothed control values (held when a hand / face leaves)
+const ctl = {
+  R: { y: .5, sx: .75, pinch: 0, middle: .5, ring: .5, pinky: .5 },
+  L: { y: .4, sx: .25, pinch: 0, middle: .3, ring: .3, pinky: .3 },
+  F: { open: 0, smile: 0, pucker: 0, brow: 0, roll: 0 },
+};
+const smooth = (dst, src, a = .35) => { for (const k in src) dst[k] += (src[k] - dst[k]) * a; };
+
 const CONNECTIONS = HandLandmarker.HAND_CONNECTIONS ?? [
   [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
   [9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]
 ].map(([start,end]) => ({start,end}));
+const TESS = FaceLandmarker.FACE_LANDMARKS_TESSELATION ?? [];
+const EYES_BROWS = [
+  ...(FaceLandmarker.FACE_LANDMARKS_LEFT_EYE ?? []),  ...(FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE ?? []),
+  ...(FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW ?? []), ...(FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW ?? []),
+];
 
 // ---------- Helpers ----------
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-// y=0 is top of frame; map so hand at top → max value, exponentially.
-const expMap = (y, lo, hi) => {
-  const t = clamp(1 - (y - 0.1) / 0.8, 0, 1);   // use the middle 80% of the frame
-  return lo * Math.pow(hi / lo, t);
-};
+const expMap = (y, lo, hi) => lo * Math.pow(hi / lo, clamp(1 - (y - 0.1) / 0.8, 0, 1));
+const logNorm = (f, lo, hi) => Math.log(f / lo) / Math.log(hi / lo);
 const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const midiOf = f => 69 + 12 * Math.log2(f / 440);
 const freqOf = m => 440 * Math.pow(2, (m - 69) / 12);
-const noteName = f => { const m = Math.round(midiOf(f)); return NOTES[m % 12] + (Math.floor(m / 12) - 1); };
+const noteName = f => { const m = Math.round(midiOf(f)); return NOTES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };
 const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(1) + "k" : Math.round(f) + "";
+const pct = v => Math.round(v * 100) + "%";
+const sxOf = x => mirror ? 1 - x : x;   // raw x → screen x (0..1)
+
+function snap(f) {
+  if (scale === "off") return f;
+  const set = SCALES[scale], m = midiOf(f);
+  let best = Math.round(m), bd = Infinity;
+  for (let n = Math.floor(m) - 6; n <= Math.ceil(m) + 6; n++) {
+    if (set.includes(((n - keyRoot) % 12 + 12) % 12)) {
+      const d = Math.abs(n - m);
+      if (d < bd) { bd = d; best = n; }
+    }
+  }
+  return freqOf(best);
+}
 
 // ---------- Audio ----------
+function driveCurve() {
+  const n = 2048, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * 3) / Math.tanh(3); }
+  return c;
+}
+function impulse(ac, secs, decay) {
+  const len = Math.floor(ac.sampleRate * secs), buf = ac.createBuffer(2, len, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return buf;
+}
+
 function initAudio() {
   const ac = new (window.AudioContext || window.webkitAudioContext)();
-  const osc = ac.createOscillator();
-  const sub = ac.createOscillator();          // sub-octave for weight
-  const subGain = ac.createGain();
-  const filter = ac.createBiquadFilter();
-  const amp = ac.createGain();
-  const master = ac.createGain();
+  const gain = v => { const n = ac.createGain(); n.gain.value = v; return n; };
 
-  osc.type = "sawtooth";
+  // Oscillators: main, detuned partner, sub-octave, harmony
+  const osc1 = ac.createOscillator(), osc2 = ac.createOscillator();
+  const sub = ac.createOscillator(), harm = ac.createOscillator();
   sub.type = "sine";
-  subGain.gain.value = 0.35;
-  filter.type = "lowpass";
-  filter.frequency.value = 2000;
-  filter.Q.value = 8;
-  amp.gain.value = 0;
-  master.gain.value = 0.5;
+  const g1 = gain(.45), g2 = gain(.3), subG = gain(0), harmG = gain(0), mix = gain(1);
+  osc1.connect(g1).connect(mix); osc2.connect(g2).connect(mix);
+  sub.connect(subG).connect(mix); harm.connect(harmG).connect(mix);
 
-  osc.connect(filter);
-  sub.connect(subGain).connect(filter);
-  filter.connect(amp).connect(master).connect(ac.destination);
-  osc.start(); sub.start();
-  return { ac, osc, sub, filter, amp, master };
+  // Vibrato LFO → detune of every oscillator
+  const lfo = ac.createOscillator(), lfoG = gain(0);
+  lfo.frequency.value = 5;
+  lfo.connect(lfoG);
+  [osc1, osc2, sub, harm].forEach(o => lfoG.connect(o.detune));
+
+  // Drive (parallel dry / saturated)
+  const dDry = gain(1), dPre = gain(1), dWet = gain(0), dSum = gain(1);
+  const shaper = ac.createWaveShaper();
+  shaper.curve = driveCurve(); shaper.oversample = "4x";
+  mix.connect(dDry).connect(dSum);
+  mix.connect(dPre).connect(shaper).connect(dWet).connect(dSum);
+
+  // Lowpass filter
+  const filter = ac.createBiquadFilter();
+  filter.type = "lowpass"; filter.frequency.value = 2000; filter.Q.value = 6;
+  dSum.connect(filter);
+
+  // Mouth formant "talk box": two bandpasses blended with dry
+  const fDry = gain(1), fW1 = gain(0), fW2 = gain(0), fOut = gain(1);
+  const bp1 = ac.createBiquadFilter(), bp2 = ac.createBiquadFilter();
+  bp1.type = "bandpass"; bp2.type = "bandpass";
+  bp1.Q.value = 7; bp2.Q.value = 9; bp1.frequency.value = 700; bp2.frequency.value = 1200;
+  filter.connect(fDry).connect(fOut);
+  filter.connect(bp1).connect(fW1).connect(fOut);
+  filter.connect(bp2).connect(fW2).connect(fOut);
+
+  // Gate amp + pan
+  const amp = gain(0);
+  fOut.connect(amp);
+  const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  const post = pan || gain(1);
+  amp.connect(post);
+  const master = gain(.55);
+  post.connect(master);
+
+  // Echo
+  const dSend = gain(0), delay = ac.createDelay(2), dFilt = ac.createBiquadFilter(), fb = gain(0), dRet = gain(.8);
+  delay.delayTime.value = .33; dFilt.type = "lowpass"; dFilt.frequency.value = 3200;
+  post.connect(dSend).connect(delay).connect(dFilt);
+  dFilt.connect(fb).connect(delay);
+  dFilt.connect(dRet).connect(master);
+
+  // Reverb
+  const vSend = gain(0), conv = ac.createConvolver(), vRet = gain(.9);
+  conv.buffer = impulse(ac, 3, 2.5);
+  post.connect(vSend).connect(conv).connect(vRet).connect(master);
+
+  // Safety compressor + analyser
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -10; comp.ratio.value = 4;
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 2048; analyser.smoothingTimeConstant = .75;
+  master.connect(comp).connect(analyser).connect(ac.destination);
+
+  [osc1, osc2, sub, harm, lfo].forEach(o => o.start());
+  fBuf = new Uint8Array(analyser.frequencyBinCount);
+  tBuf = new Uint8Array(analyser.fftSize);
+
+  return { ac, osc1, osc2, sub, harm, subG, harmG, lfo, lfoG, dDry, dPre, dWet,
+           filter, bp1, bp2, fDry, fW1, fW2, amp, pan, delay, dSend, fb, vSend, analyser };
 }
 
-function setPitch(f) {
-  const t = audio.ac.currentTime;
-  audio.osc.frequency.setTargetAtTime(f, t, quantize ? 0.01 : 0.03);
-  audio.sub.frequency.setTargetAtTime(f / 2, t, quantize ? 0.01 : 0.03);
+const T = (param, v, tc = .04) => param.setTargetAtTime(v, audio.ac.currentTime, tc);
+
+function applyAudio(gateOn) {
+  const p = preset, R = ctl.R, L = ctl.L, F = ctl.F, A = audio;
+  const faceOn = fx.face && !!face;
+
+  // Right hand: voice
+  const f = snap(expMap(R.y, p.lo, p.hi));
+  const glide = scale === "off" ? .03 : .008;
+  const bend = faceOn ? F.roll * 200 : 0;             // head tilt → ±2 semitones
+  const det = p.det + R.middle * p.detMax;
+  const hRatio = Math.pow(2, p.harmInt / 12);
+  T(A.osc1.frequency, f, glide);  T(A.osc2.frequency, f, glide);
+  T(A.sub.frequency, f / 2, glide); T(A.harm.frequency, f * hRatio, glide);
+  T(A.osc1.detune, bend); T(A.osc2.detune, bend + det);
+  T(A.sub.detune, bend);  T(A.harm.detune, bend - det * .5);
+  T(A.subG.gain, R.pinky * p.sub);
+  T(A.harmG.gain, R.ring * p.harm);
+  const vib = R.pinch * 70;                            // cents
+  T(A.lfoG.gain, vib);
+  const lfoRate = 4.5 + (faceOn ? F.brow * 7 : 0);
+  T(A.lfo.frequency, lfoRate, .1);
+  const pan = clamp((R.sx - .75) * 4, -1, 1) * .8;
+  if (A.pan) T(A.pan.pan, pan, .05);
+
+  // Left hand: tone
+  const cut = expMap(L.y, CUT_MIN, CUT_MAX);
+  T(A.filter.frequency, cut);
+  const q = p.q + L.pinch * 16;
+  T(A.filter.Q, q, .05);
+  const drv = fx.drive ? .15 + L.middle * .8 : 0;
+  T(A.dPre.gain, 1 + drv * 24); T(A.dWet.gain, drv * .5); T(A.dDry.gain, 1 - drv * .85);
+  const dt = .1 + clamp(L.sx / .5, 0, 1) * .5;
+  T(A.delay.delayTime, dt, .25);
+  T(A.dSend.gain, fx.delay ? .4 : 0, .05);
+  T(A.fb.gain, fx.delay ? L.ring * .72 : 0, .05);
+  T(A.vSend.gain, fx.verb ? .08 + L.pinky * .7 : 0, .08);
+
+  // Face: mouth formants
+  const talk = faceOn ? clamp(F.open * 1.3, 0, 1) : 0;
+  const F1 = clamp(280 + F.open * 650 - F.pucker * 120, 200, 1200);
+  const F2 = clamp(850 + F.smile * 1700 + F.open * 250 - F.pucker * 450, 500, 3200);
+  T(A.bp1.frequency, F1, .03); T(A.bp2.frequency, F2, .03);
+  T(A.fDry.gain, 1 - talk * .85, .03); T(A.fW1.gain, talk * 3, .03); T(A.fW2.gain, talk * 2.2, .03);
+
+  T(A.amp.gain, gateOn && !muted ? .6 : 0, gateOn ? p.atk : p.rel);
+  return { f, cut, q, drv, dt, bend, det, vib, lfoRate, pan, talk, F1, F2 };
 }
-function setCutoff(f) {
-  audio.filter.frequency.setTargetAtTime(f, audio.ac.currentTime, 0.04);
-}
-function setGate(on) {
-  const target = on && !muted ? 0.6 : 0;
-  audio.amp.gain.setTargetAtTime(target, audio.ac.currentTime, on ? 0.03 : 0.12);
+
+function applyPreset(key) {
+  preset = PRESETS[key];
+  $("wave").value = preset.w1;
+  Object.assign(fx, preset.fx);
+  refreshFxButtons();
+  if (audio) { audio.osc1.type = preset.w1; audio.osc2.type = preset.w2; }
 }
 
 // ---------- Camera ----------
@@ -220,143 +478,466 @@ async function startCamera() {
   });
   video.srcObject = stream;
   await video.play();
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  W = video.videoWidth; H = video.videoHeight;
+  canvas.width = W * K; canvas.height = H * K;
   lastVideoTime = -1;
 }
 
 // ---------- MediaPipe ----------
-async function initLandmarker() {
-  const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
-  const opts = delegate => ({
-    baseOptions: { modelAssetPath: MODEL_URL, delegate },
-    runningMode: "VIDEO",
-    numHands: 2,
-    minHandDetectionConfidence: 0.5,
-    minHandPresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5
+async function createTask(Cls, fileset, opts) {
+  const make = delegate => Cls.createFromOptions(fileset, {
+    ...opts, baseOptions: { ...opts.baseOptions, delegate }
   });
-  try {
-    return await HandLandmarker.createFromOptions(fileset, opts("GPU"));
-  } catch (e) {
-    console.warn("GPU delegate failed, using CPU", e);
-    return await HandLandmarker.createFromOptions(fileset, opts("CPU"));
+  try { return await make("GPU"); }
+  catch (e) { console.warn("GPU delegate failed, using CPU", e); return await make("CPU"); }
+}
+
+// ---------- Features ----------
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+function handFeatures(lm) {
+  const P = i => ({ x: sxOf(lm[i].x) * W, y: lm[i].y * H });
+  const w = P(0), palm = dist(w, P(9)) || 1;
+  // finger extension: tip-to-wrist vs knuckle-to-wrist (≈1 curled, ≈2 straight)
+  const ext = (tip, mcp) => clamp((dist(P(tip), w) / (dist(P(mcp), w) || 1) - 1.1) / .75, 0, 1);
+  return {
+    y: lm[9].y, sx: sxOf(lm[9].x),
+    pinch: 1 - clamp((dist(P(4), P(8)) / palm - .2) / .9, 0, 1),
+    middle: ext(12, 9), ring: ext(16, 13), pinky: ext(20, 17),
+  };
+}
+
+function faceFeatures(lm, bs) {
+  const P = i => ({ x: sxOf(lm[i].x) * W, y: lm[i].y * H });
+  const fh = dist(P(10), P(152)) || 1, fw = dist(P(234), P(454)) || 1;
+  const b = name => bs?.find(c => c.categoryName === name)?.score;
+  // Blendshapes when available, lip-landmark geometry as fallback
+  const open = b("jawOpen") ?? clamp((dist(P(13), P(14)) / fh - .01) / .12, 0, 1);
+  const smile = b("mouthSmileLeft") != null
+    ? (b("mouthSmileLeft") + b("mouthSmileRight")) / 2
+    : clamp((dist(P(61), P(291)) / fw - .36) / .16, 0, 1);
+  const pucker = b("mouthPucker") ?? 0;
+  const brow = b("browInnerUp") ?? 0;
+  const e1 = P(33), e2 = P(263);
+  let ang = Math.atan2(e2.y - e1.y, e2.x - e1.x);
+  if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+  const dz = .06;
+  const roll = Math.abs(ang) < dz ? 0 : clamp((ang - Math.sign(ang) * dz) / .3, -1, 1);
+  return {
+    open: clamp(open * 1.2, 0, 1), smile: clamp(smile * 1.3, 0, 1),
+    pucker: clamp(pucker * 1.3, 0, 1), brow: clamp(brow * 1.4, 0, 1), roll,
+  };
+}
+
+// ---------- Detection ----------
+function detect() {
+  const now = performance.now();
+  const res = handLm.detectForVideo(video, now);
+  let right = null, left = null;
+  (res.landmarks || []).forEach((lm, i) => {
+    const cat = res.handednesses?.[i]?.[0] ?? res.handedness?.[i]?.[0];
+    let label = cat?.categoryName;
+    // MediaPipe labels assume a mirrored image; raw front-camera frames aren't, so flip.
+    if (mirror) label = label === "Left" ? "Right" : "Left";
+    if (swapHands) label = label === "Left" ? "Right" : "Left";
+    const hand = { lm, label, score: cat?.score ?? 0 };
+    if (label === "Right" && !right) right = hand;
+    else if (label === "Left" && !left) left = hand;
+    else if (!right) right = hand; else if (!left) left = hand;
+  });
+  hands = { right, left };
+  if (right) smooth(ctl.R, handFeatures(right.lm));
+  if (left)  smooth(ctl.L, handFeatures(left.lm));
+
+  // Face every other frame to keep mobile frame rates up
+  if (faceLm && frameNo % 2 === 0) {
+    const fr = faceLm.detectForVideo(video, performance.now());
+    const lm = fr.faceLandmarks?.[0];
+    face = lm ? { lm } : null;
+    if (lm) smooth(ctl.F, faceFeatures(lm, fr.faceBlendshapes?.[0]?.categories), .4);
+  }
+
+  vals = applyAudio(!!right);
+  updateReadouts();
+  fpsCount++;
+}
+
+// ---------- Readouts (DOM) ----------
+const PANEL_DEF = {
+  panelL: { title: "L.HAND // TONE", rows: [
+    ["cut", "HEIGHT", "CUTOFF"], ["dtime", "SIDE", "ECHO T"], ["res", "PINCH", "RESO"],
+    ["drive", "MIDDLE", "DRIVE"], ["fb", "RING", "FEEDBK"], ["verb", "PINKY", "REVERB"]] },
+  panelF: { title: "FACE // MOUTH", rows: [
+    ["open", "JAW", "VOWEL"], ["smile", "SMILE", "BRIGHT"], ["pucker", "PUCKER", "OO"],
+    ["brow", "BROWS", "LFO"], ["roll", "TILT", "BEND"]] },
+  panelR: { title: "R.HAND // VOICE", rows: [
+    ["pitch", "HEIGHT", "PITCH"], ["pan", "SIDE", "PAN"], ["vib", "PINCH", "VIBRATO"],
+    ["det", "MIDDLE", "DETUNE"], ["harm", "RING", "HARMONY"], ["sub", "PINKY", "SUB"]] },
+};
+const rowEls = {};
+for (const [id, def] of Object.entries(PANEL_DEF)) {
+  $(id).innerHTML = `<h3>${def.title}</h3>` + def.rows.map(([k, src, name]) =>
+    `<div class="row" id="row-${k}"><div class="top"><span class="k"><em>${src}</em> ${name}</span><span class="v">—</span></div><div class="bar"><i></i></div></div>`
+  ).join("");
+  def.rows.forEach(([k]) => { const r = $("row-" + k); rowEls[k] = { bar: r.querySelector("i"), v: r.querySelector(".v") }; });
+}
+function setRow(k, norm, txt) {
+  const r = rowEls[k];
+  r.bar.style.width = (clamp(norm, 0, 1) * 100).toFixed(1) + "%";
+  r.v.textContent = txt;
+}
+
+function updateReadouts() {
+  const v = vals, R = ctl.R, L = ctl.L, F = ctl.F, p = preset;
+  const pitchN = logNorm(v.f, p.lo, p.hi), cutN = logNorm(v.cut, CUT_MIN, CUT_MAX);
+
+  setRow("pitch", pitchN, noteName(v.f));
+  setRow("pan", (v.pan + 1) / 2, v.pan < -.05 ? "L" + pct(-v.pan) : v.pan > .05 ? "R" + pct(v.pan) : "C");
+  setRow("vib", R.pinch, Math.round(v.vib) + "¢");
+  setRow("det", R.middle, Math.round(v.det) + "¢");
+  setRow("harm", R.ring, "+" + p.harmInt + "st " + pct(R.ring));
+  setRow("sub", R.pinky, pct(R.pinky));
+
+  setRow("cut", cutN, fmtHz(v.cut) + "Hz");
+  setRow("dtime", (v.dt - .1) / .5, fx.delay ? Math.round(v.dt * 1000) + "ms" : "OFF");
+  setRow("res", L.pinch, "Q" + v.q.toFixed(1));
+  setRow("drive", fx.drive ? L.middle : 0, fx.drive ? pct(v.drv) : "OFF");
+  setRow("fb", fx.delay ? L.ring : 0, fx.delay ? pct(L.ring) : "OFF");
+  setRow("verb", fx.verb ? L.pinky : 0, fx.verb ? pct(L.pinky) : "OFF");
+
+  setRow("open", F.open, Math.round(v.F1) + "Hz");
+  setRow("smile", F.smile, Math.round(v.F2) + "Hz");
+  setRow("pucker", F.pucker, pct(F.pucker));
+  setRow("brow", F.brow, v.lfoRate.toFixed(1) + "Hz");
+  setRow("roll", (F.roll + 1) / 2, (v.bend >= 0 ? "+" : "") + Math.round(v.bend) + "¢");
+
+  $("panelR").classList.toggle("idle", !hands.right);
+  $("panelL").classList.toggle("idle", !hands.left);
+  $("panelF").classList.toggle("idle", !face || !fx.face);
+
+  const pv = $("pitchVal"), cv = $("cutoffVal"), fv = $("faceVal");
+  if (hands.right) { pv.textContent = `${noteName(v.f)} ${fmtHz(v.f)}Hz`; pv.classList.remove("off"); }
+  else pv.classList.add("off");
+  if (hands.left) { cv.textContent = `${fmtHz(v.cut)}Hz`; cv.classList.remove("off"); }
+  else cv.classList.add("off");
+  fv.textContent = !faceLm ? "N/A" : face ? `LOCK · ${face.lm.length}PT` : "SEARCHING";
+  fv.classList.toggle("lock", !!face);
+  $("meterR").style.height = hands.right ? (pitchN * 100) + "%" : "0%";
+  $("meterL").style.height = (cutN * 100) + "%";
+
+  const now = performance.now();
+  if (now - fpsT > 1000) {
+    $("fpsVal").textContent = `${Math.round(fpsCount * 1000 / (now - fpsT))} FPS · ${preset.name.toUpperCase()}`;
+    fpsCount = 0; fpsT = now;
   }
 }
+
+// ---------- Drawing ----------
+const FONT = "10px ui-monospace, Menlo, monospace";
+
+function tag(x, y, txt, col) {
+  ctx.font = FONT;
+  const w = ctx.measureText(txt).width + 8;
+  ctx.fillStyle = "rgba(0,0,0,.7)";
+  ctx.fillRect(x, y - 10, w, 14);
+  ctx.fillStyle = col;
+  ctx.fillText(txt, x + 4, y + 1);
+}
+function brackets(x0, y0, x1, y1, col, len = 12) {
+  ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (const [x, y, sx, sy] of [[x0,y0,1,1],[x1,y0,-1,1],[x0,y1,1,-1],[x1,y1,-1,-1]]) {
+    ctx.moveTo(x + sx * len, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy * len);
+  }
+  ctx.stroke();
+}
+function ring(x, y, r, v, col) {
+  ctx.lineWidth = 1; ctx.strokeStyle = "rgba(255,255,255,.18)";
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = col;
+  ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + clamp(v, 0, 1) * Math.PI * 2); ctx.stroke();
+}
+function crosshair(x, y, col) {
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(x - 20, y); ctx.lineTo(x - 6, y); ctx.moveTo(x + 6, y); ctx.lineTo(x + 20, y);
+  ctx.moveTo(x, y - 20); ctx.lineTo(x, y - 6); ctx.moveTo(x, y + 6); ctx.lineTo(x, y + 20);
+  ctx.stroke();
+}
+
+function drawBackground(t) {
+  ctx.save();
+  if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+  ctx.filter = "grayscale(1) contrast(1.25) brightness(.6)";
+  ctx.drawImage(video, 0, 0, W, H);
+  ctx.restore();
+  ctx.fillStyle = "rgba(0,14,48,.5)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = "rgba(31,139,255,.08)"; ctx.lineWidth = .5;
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += 32) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = 0; y <= H; y += 32) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+
+  // Active band guides (10%–90%)
+  ctx.setLineDash([6, 8]);
+  ctx.strokeStyle = "rgba(255,34,56,.25)";
+  ctx.beginPath(); ctx.moveTo(0, H * .1); ctx.lineTo(W, H * .1); ctx.stroke();
+  ctx.strokeStyle = "rgba(31,139,255,.3)";
+  ctx.beginPath(); ctx.moveTo(0, H * .9); ctx.lineTo(W, H * .9); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Sweeping scan line
+  const sy = (t * .05) % H;
+  const g = ctx.createLinearGradient(0, sy - 30, 0, sy);
+  g.addColorStop(0, "rgba(31,139,255,0)"); g.addColorStop(1, "rgba(31,139,255,.18)");
+  ctx.fillStyle = g; ctx.fillRect(0, sy - 30, W, 30);
+}
+
+function drawFace(lm) {
+  const F = ctl.F;
+  const X = i => sxOf(lm[i].x) * W, Y = i => lm[i].y * H;
+  const poly = idx => { ctx.beginPath(); idx.forEach((i, k) => k ? ctx.lineTo(X(i), Y(i)) : ctx.moveTo(X(i), Y(i))); ctx.closePath(); };
+  const edges = list => {
+    ctx.beginPath();
+    for (const c of list) {
+      if (!lm[c.start] || !lm[c.end]) continue;
+      ctx.moveTo(X(c.start), Y(c.start)); ctx.lineTo(X(c.end), Y(c.end));
+    }
+    ctx.stroke();
+  };
+
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const i of FACE_OVAL) { const x = X(i), y = Y(i); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+
+  // Dark mask with scanlines over the face
+  ctx.save();
+  poly(FACE_OVAL);
+  ctx.fillStyle = "rgba(0,6,26,.8)"; ctx.fill();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(31,139,255,.12)"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = y0; y < y1; y += 3) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
+  ctx.stroke();
+  ctx.restore();
+
+  // Wire mesh
+  ctx.lineWidth = .5; ctx.strokeStyle = "rgba(31,139,255,.55)";
+  edges(TESS);
+  ctx.fillStyle = "rgba(140,200,255,.9)";
+  for (let i = 0; i < Math.min(468, lm.length); i += 2) ctx.fillRect(X(i) - .6, Y(i) - .6, 1.2, 1.2);
+
+  // Contours
+  ctx.save();
+  ctx.shadowColor = BLUE; ctx.shadowBlur = 8;
+  ctx.strokeStyle = BLUE; ctx.lineWidth = 1.2; poly(FACE_OVAL); ctx.stroke();
+  ctx.strokeStyle = BLUE_HI; ctx.lineWidth = 1; edges(EYES_BROWS);
+  ctx.restore();
+  if (lm.length > 473) {
+    ctx.strokeStyle = RED; ctx.lineWidth = 1;
+    for (const i of [468, 473]) { ctx.beginPath(); ctx.arc(X(i), Y(i), 3, 0, Math.PI * 2); ctx.stroke(); }
+  }
+
+  // Lips
+  ctx.save();
+  ctx.shadowColor = RED; ctx.shadowBlur = 10;
+  poly(LIPS_OUT);
+  ctx.fillStyle = `rgba(255,34,56,${.2 + F.open * .45})`; ctx.fill();
+  ctx.strokeStyle = RED; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.restore();
+  poly(LIPS_IN);
+  ctx.fillStyle = "rgba(0,0,0,.85)"; ctx.fill();
+  ctx.strokeStyle = "#ff7a88"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = "#fff";
+  for (const i of [...LIPS_OUT, ...LIPS_IN]) ctx.fillRect(X(i) - 1, Y(i) - 1, 2, 2);
+
+  // Mouth measurement lines
+  ctx.setLineDash([2, 2]); ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = .8;
+  ctx.beginPath();
+  ctx.moveTo(X(13), Y(13)); ctx.lineTo(X(14), Y(14));
+  ctx.moveTo(X(61), Y(61)); ctx.lineTo(X(291), Y(291));
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Frame + data column
+  const pad = 8;
+  brackets(x0 - pad, y0 - pad, x1 + pad, y1 + pad, BLUE, 16);
+  tag(x0 - pad, y0 - pad - 6, `FACE.MESH ${lm.length}PT`, BLUE);
+  if (!vals) return;
+  const rows = [
+    ["JAW", F.open, `F1 ${Math.round(vals.F1)}`],
+    ["SMILE", F.smile, `F2 ${Math.round(vals.F2)}`],
+    ["PUCKER", F.pucker, pct(F.pucker)],
+    ["BROW", F.brow, `${vals.lfoRate.toFixed(1)}Hz`],
+    ["TILT", (F.roll + 1) / 2, `${Math.round(vals.bend)}¢`],
+  ];
+  const colW = 104;
+  const lx = x1 + pad + 14 + colW < W ? x1 + pad + 14 : Math.max(2, x0 - pad - 14 - colW);
+  const mx = lx > x1 ? lx : lx + colW;
+  ctx.strokeStyle = "rgba(255,34,56,.5)"; ctx.lineWidth = .8;
+  ctx.beginPath(); ctx.moveTo(X(lx > x1 ? 291 : 61), Y(291)); ctx.lineTo(mx, y0 + 6); ctx.stroke();
+  rows.forEach(([k, v, txt], i) => {
+    const y = y0 + 6 + i * 18;
+    ctx.font = FONT;
+    ctx.fillStyle = "rgba(0,0,0,.7)"; ctx.fillRect(lx, y - 9, colW, 16);
+    ctx.fillStyle = BLUE_HI; ctx.fillText(k, lx + 3, y + 1);
+    ctx.fillStyle = "#fff"; ctx.textAlign = "right"; ctx.fillText(txt, lx + colW - 3, y + 1); ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,.1)"; ctx.fillRect(lx + 3, y + 4, colW - 6, 2);
+    ctx.fillStyle = RED; ctx.fillRect(lx + 3, y + 4, (colW - 6) * clamp(v, 0, 1), 2);
+  });
+}
+
+function drawHand(h, isR) {
+  const lm = h.lm, col = isR ? RED : BLUE, c = isR ? ctl.R : ctl.L;
+  const X = p => sxOf(p.x) * W, Y = p => p.y * H;
+
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of lm) { const x = X(p), y = Y(p); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const pad = 14;
+  brackets(x0 - pad, y0 - pad, x1 + pad, y1 + pad, col);
+  tag(x0 - pad, y0 - pad - 6, `${isR ? "R.HAND // VOICE" : "L.HAND // TONE"} ${Math.round(h.score * 100)}%`, col);
+
+  // Wire web: palm base to every joint
+  ctx.strokeStyle = isR ? "rgba(255,34,56,.18)" : "rgba(31,139,255,.22)"; ctx.lineWidth = .5;
+  ctx.beginPath();
+  for (const b of [0, 5, 9, 13, 17]) for (let i = 1; i < 21; i++) {
+    if (i === b) continue;
+    ctx.moveTo(X(lm[b]), Y(lm[b])); ctx.lineTo(X(lm[i]), Y(lm[i]));
+  }
+  ctx.stroke();
+
+  // Skeleton
+  ctx.save();
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 10;
+  ctx.beginPath();
+  for (const cn of CONNECTIONS) {
+    const a = lm[cn.start], b = lm[cn.end];
+    ctx.moveTo(X(a), Y(a)); ctx.lineTo(X(b), Y(b));
+  }
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#fff";
+  for (const p of lm) ctx.fillRect(X(p) - 1.5, Y(p) - 1.5, 3, 3);
+
+  // Finger value rings
+  const fingers = isR
+    ? [[12, "DET", c.middle], [16, "HRM", c.ring], [20, "SUB", c.pinky]]
+    : [[12, "DRV", c.middle], [16, "FBK", c.ring], [20, "VRB", c.pinky]];
+  ctx.font = FONT; ctx.textAlign = "center";
+  for (const [i, code, v] of fingers) {
+    const x = X(lm[i]), y = Y(lm[i]);
+    ring(x, y, 9, v, col);
+    ctx.fillStyle = col; ctx.fillText(code, x, y - 14);
+  }
+  ctx.textAlign = "left";
+
+  // Pinch
+  const a = lm[4], b = lm[8];
+  ctx.setLineDash([3, 3]); ctx.strokeStyle = col; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(X(a), Y(a)); ctx.lineTo(X(b), Y(b)); ctx.stroke();
+  ctx.setLineDash([]);
+  ring(X(a), Y(a), 6, c.pinch, col); ring(X(b), Y(b), 6, c.pinch, col);
+  tag((X(a) + X(b)) / 2 + 8, (Y(a) + Y(b)) / 2, `${isR ? "VIB" : "RES"} ${c.pinch.toFixed(2)}`, col);
+
+  // Palm control point
+  const pc = lm[9];
+  crosshair(X(pc), Y(pc), col);
+  if (vals) tag(X(pc) + 22, Y(pc) + 4,
+    isR ? `${noteName(vals.f)} ${fmtHz(vals.f)}Hz` : `CUT ${fmtHz(vals.cut)}Hz`, "#fff");
+}
+
+function drawScope() {
+  const w = scope.width, h = scope.height;
+  sctx.clearRect(0, 0, w, h);
+  if (!audio) return;
+  audio.analyser.getByteFrequencyData(fBuf);
+  audio.analyser.getByteTimeDomainData(tBuf);
+
+  // Spectrum: log-spaced blue bars
+  const bars = 72, bw = w / bars;
+  sctx.fillStyle = "rgba(31,139,255,.55)";
+  for (let i = 0; i < bars; i++) {
+    const idx = Math.floor(Math.pow(fBuf.length, i / bars));
+    const v = fBuf[Math.min(idx, fBuf.length - 1)] / 255;
+    sctx.fillRect(i * bw + 1, h - v * h, bw - 2, v * h);
+  }
+  // Waveform: red line
+  sctx.strokeStyle = RED; sctx.lineWidth = 1.5 * devicePixelRatio;
+  sctx.shadowColor = RED; sctx.shadowBlur = 6;
+  sctx.beginPath();
+  for (let i = 0; i < tBuf.length; i += 4) {
+    const x = i / tBuf.length * w, y = tBuf[i] / 255 * h;
+    i ? sctx.lineTo(x, y) : sctx.moveTo(x, y);
+  }
+  sctx.stroke();
+  sctx.shadowBlur = 0;
+}
+
+function resizeScope() {
+  scope.width = scope.clientWidth * devicePixelRatio;
+  scope.height = scope.clientHeight * devicePixelRatio;
+}
+window.addEventListener("resize", resizeScope);
+resizeScope();
 
 // ---------- Main loop ----------
 function loop() {
   requestAnimationFrame(loop);
   if (video.readyState < 2) return;
-
-  const mirror = facing === "user";
-  const W = canvas.width, H = canvas.height;
-
-  // Draw the camera frame (mirrored for selfie view), darkened + red tint
-  ctx.save();
-  if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
-  ctx.filter = "grayscale(1) brightness(0.45) contrast(1.2)";
-  ctx.drawImage(video, 0, 0, W, H);
-  ctx.restore();
-  ctx.filter = "none";
-  ctx.fillStyle = "rgba(120,0,0,0.18)";
-  ctx.fillRect(0, 0, W, H);
-
-  // Guide lines for the active band (10%–90%)
-  ctx.strokeStyle = "rgba(225,6,0,0.18)";
-  ctx.setLineDash([6, 8]);
-  ctx.beginPath();
-  ctx.moveTo(0, H * 0.1); ctx.lineTo(W, H * 0.1);
-  ctx.moveTo(0, H * 0.9); ctx.lineTo(W, H * 0.9);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  if (video.currentTime === lastVideoTime) return;
-  lastVideoTime = video.currentTime;
-
-  const res = landmarker.detectForVideo(video, performance.now());
-
-  let right = null, left = null;
-  (res.landmarks || []).forEach((lm, i) => {
-    let label = res.handednesses?.[i]?.[0]?.categoryName
-             ?? res.handedness?.[i]?.[0]?.categoryName;
-    // MediaPipe labels assume a mirrored image. Our raw front-camera frames
-    // aren't mirrored, so the labels come out swapped — flip them back.
-    if (mirror) label = label === "Left" ? "Right" : "Left";
-    if (swapHands) label = label === "Left" ? "Right" : "Left";
-    const hand = { lm, label };
-    if (label === "Right" && !right) right = hand;
-    else if (label === "Left" && !left) left = hand;
-    else if (!right) right = hand; else if (!left) left = hand;
-  });
-
-  // Draw hands
-  for (const h of [right, left]) {
-    if (!h) continue;
-    const isR = h === right;
-    const px = p => (mirror ? (1 - p.x) : p.x) * W;
-    const py = p => p.y * H;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = isR ? "#e10600" : "#ff6a5c";
-    ctx.shadowColor = "#e10600"; ctx.shadowBlur = 12;
-    ctx.beginPath();
-    for (const c of CONNECTIONS) {
-      const a = h.lm[c.start], b = h.lm[c.end];
-      ctx.moveTo(px(a), py(a)); ctx.lineTo(px(b), py(b));
-    }
-    ctx.stroke();
-    ctx.fillStyle = "#fff";
-    for (const p of h.lm) { ctx.beginPath(); ctx.arc(px(p), py(p), 3, 0, Math.PI * 2); ctx.fill(); }
-    // Control point = middle-finger knuckle (landmark 9): stable palm center
-    const c = h.lm[9];
-    ctx.beginPath();
-    ctx.arc(px(c), py(c), 14, 0, Math.PI * 2);
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "#e10600";
-    ctx.font = "bold 18px monospace";
-    ctx.fillText(isR ? "PITCH" : "FILTER", px(c) + 20, py(c) + 6);
+  mirror = facing === "user";
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    frameNo++;
+    detect();
   }
-
-  // Right hand → pitch (gate)
-  if (right) {
-    let f = expMap(right.lm[9].y, PITCH_MIN, PITCH_MAX);
-    if (quantize) f = freqOf(Math.round(midiOf(f)));
-    setPitch(f);
-    setGate(true);
-    $("pitchVal").textContent = `${noteName(f)} ${fmtHz(f)}Hz`;
-    $("pitchVal").classList.remove("off");
-    $("meterR").style.height = (100 * Math.log(f / PITCH_MIN) / Math.log(PITCH_MAX / PITCH_MIN)) + "%";
-  } else {
-    setGate(false);
-    $("pitchVal").classList.add("off");
-    $("meterR").style.height = "0%";
-  }
-
-  // Left hand → lowpass cutoff (holds last value when hand leaves)
-  if (left) {
-    const f = expMap(left.lm[9].y, CUT_MIN, CUT_MAX);
-    setCutoff(f);
-    $("cutoffVal").textContent = `${fmtHz(f)}Hz`;
-    $("cutoffVal").classList.remove("off");
-    $("meterL").style.height = (100 * Math.log(f / CUT_MIN) / Math.log(CUT_MAX / CUT_MIN)) + "%";
-  } else {
-    $("cutoffVal").classList.add("off");
-  }
+  // Redraw every animation frame from cached results (no flicker between video frames)
+  ctx.setTransform(K, 0, 0, K, 0, 0);
+  drawBackground(performance.now());
+  if (face) drawFace(face.lm);
+  if (hands.left) drawHand(hands.left, false);
+  if (hands.right) drawHand(hands.right, true);
+  drawScope();
 }
 
 // ---------- UI ----------
+for (const [k, p] of Object.entries(PRESETS)) $("preset").add(new Option(p.name, k));
+NOTES.forEach((n, i) => $("key").add(new Option("Key " + n, i)));
+
+function refreshFxButtons() {
+  document.querySelectorAll(".fxBtn").forEach(b => b.classList.toggle("on", fx[b.dataset.fx]));
+}
+applyPreset("lead");
+
 $("start").onclick = async () => {
   const btn = $("start");
   btn.disabled = true;
   try {
     audio = initAudio();                 // must happen inside the tap
     await audio.ac.resume();
+    applyPreset($("preset").value);
     statusEl.textContent = "Starting camera…";
     await startCamera();
     statusEl.textContent = "Loading hand model…";
-    landmarker = await initLandmarker();
+    const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+    handLm = await createTask(HandLandmarker, fileset, {
+      baseOptions: { modelAssetPath: HAND_MODEL },
+      runningMode: "VIDEO", numHands: 2,
+      minHandDetectionConfidence: .5, minHandPresenceConfidence: .5, minTrackingConfidence: .5,
+    });
+    statusEl.textContent = "Loading face mesh…";
+    try {
+      faceLm = await createTask(FaceLandmarker, fileset, {
+        baseOptions: { modelAssetPath: FACE_MODEL },
+        runningMode: "VIDEO", numFaces: 1, outputFaceBlendshapes: true,
+      });
+    } catch (e) {
+      console.warn("Face model failed; continuing with hands only", e);
+    }
     $("overlay").style.display = "none";
+    resizeScope();
     loop();
   } catch (e) {
     console.error(e);
@@ -365,13 +946,14 @@ $("start").onclick = async () => {
   }
 };
 
-$("wave").onchange = e => { if (audio) audio.osc.type = e.target.value; };
-
-$("quantBtn").onclick = e => {
-  quantize = !quantize;
-  e.target.textContent = "Snap: " + (quantize ? "On" : "Off");
-  e.target.classList.toggle("on", quantize);
-};
+$("preset").onchange = e => applyPreset(e.target.value);
+$("wave").onchange = e => { if (audio) audio.osc1.type = e.target.value; };
+$("scale").onchange = e => { scale = e.target.value; };
+$("key").onchange = e => { keyRoot = +e.target.value; };
+document.querySelectorAll(".fxBtn").forEach(b => b.onclick = () => {
+  fx[b.dataset.fx] = !fx[b.dataset.fx];
+  refreshFxButtons();
+});
 $("swapBtn").onclick = e => {
   swapHands = !swapHands;
   e.target.classList.toggle("on", swapHands);
@@ -380,11 +962,14 @@ $("camBtn").onclick = async () => {
   facing = facing === "user" ? "environment" : "user";
   try { await startCamera(); } catch (e) { console.error(e); }
 };
+$("dataBtn").onclick = e => {
+  const hidden = $("panels").classList.toggle("hidden");
+  e.target.classList.toggle("on", !hidden);
+};
 $("muteBtn").onclick = e => {
   muted = !muted;
   e.target.textContent = muted ? "Unmute" : "Mute";
   e.target.classList.toggle("on", muted);
-  if (muted && audio) setGate(false);
 };
 
 // Resume audio if the browser suspended it (e.g. after switching tabs)
