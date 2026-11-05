@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hand Synth</title>
+<style>
+  :root {
+    --red: #e10600;
+    --red-dim: #5a0200;
+    --bg: #000;
+    --fg: #f2f2f2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--fg);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden; touch-action: manipulation;
+  }
+  #stage { position: fixed; inset: 0; }
+  canvas {
+    width: 100%; height: 100%; display: block;
+    object-fit: cover; background: #050000;
+  }
+  video { display: none; }
+
+  /* Side meters: left = filter, right = pitch */
+  .meter {
+    position: fixed; top: 12%; bottom: 12%; width: 10px;
+    border: 1px solid var(--red-dim); border-radius: 5px; overflow: hidden;
+    background: rgba(20,0,0,.6);
+  }
+  .meter.left { left: 14px; } .meter.right { right: 14px; }
+  .meter > div {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
+    background: linear-gradient(to top, var(--red-dim), var(--red));
+    box-shadow: 0 0 12px var(--red);
+    transition: height 60ms linear;
+  }
+
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0;
+    padding: max(14px, env(safe-area-inset-top)) 36px 14px;
+    display: flex; justify-content: space-between; gap: 12px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.85), transparent);
+    font-size: 13px; letter-spacing: .05em; pointer-events: none;
+  }
+  #hud .label { color: #888; font-size: 10px; text-transform: uppercase; }
+  #hud .val { color: var(--red); font-size: 20px; font-weight: 700; text-shadow: 0 0 10px rgba(225,6,0,.6); }
+  #hud .off { color: #444; text-shadow: none; }
+  #hud .right { text-align: right; }
+
+  #controls {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 14px 36px max(16px, env(safe-area-inset-bottom));
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+    background: linear-gradient(to top, rgba(0,0,0,.9), transparent);
+  }
+  button, select {
+    font: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--fg); background: #0d0000; border: 1px solid var(--red-dim);
+    padding: 9px 12px; border-radius: 6px;
+  }
+  button:active { background: var(--red-dim); }
+  button.on { border-color: var(--red); color: var(--red); }
+
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px; text-align: center;
+    background: radial-gradient(circle at center, #1a0000 0%, #000 70%);
+    padding: 24px; z-index: 10;
+  }
+  #overlay h1 {
+    font-size: 34px; letter-spacing: .3em; color: var(--red);
+    text-shadow: 0 0 24px rgba(225,6,0,.7);
+  }
+  #overlay p { color: #999; font-size: 13px; line-height: 1.6; max-width: 340px; }
+  #overlay p b { color: var(--fg); font-weight: normal; }
+  #start {
+    font-size: 16px; padding: 16px 40px; border: 2px solid var(--red);
+    color: var(--red); background: transparent; border-radius: 40px;
+    box-shadow: 0 0 20px rgba(225,6,0,.4), inset 0 0 20px rgba(225,6,0,.2);
+  }
+  #start:disabled { opacity: .5; }
+  #status { color: var(--red); font-size: 12px; min-height: 1.2em; }
+</style>
+</head>
+<body>
+
+<div id="stage"><canvas id="canvas"></canvas></div>
+<video id="video" playsinline muted></video>
+
+<div class="meter left"><div id="meterL"></div></div>
+<div class="meter right"><div id="meterR"></div></div>
+
+<div id="hud">
+  <div>
+    <div class="label">L · Filter</div>
+    <div class="val off" id="cutoffVal">—</div>
+  </div>
+  <div class="right">
+    <div class="label">R · Pitch</div>
+    <div class="val off" id="pitchVal">—</div>
+  </div>
+</div>
+
+<div id="controls">
+  <select id="wave">
+    <option value="sawtooth">Saw</option>
+    <option value="square">Square</option>
+    <option value="triangle">Triangle</option>
+    <option value="sine">Sine</option>
+  </select>
+  <button id="quantBtn">Snap: Off</button>
+  <button id="swapBtn">Swap L/R</button>
+  <button id="camBtn">Flip Cam</button>
+  <button id="muteBtn">Mute</button>
+</div>
+
+<div id="overlay">
+  <h1>HAND SYNTH</h1>
+  <p>
+    <b>Right hand</b> up/down → pitch<br>
+    <b>Left hand</b> up/down → lowpass filter<br>
+    Sound plays while your right hand is visible.
+  </p>
+  <button id="start">Start</button>
+  <div id="status"></div>
+</div>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const WASM_URL  = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+// ---------- Ranges ----------
+const PITCH_MIN = 110, PITCH_MAX = 1760;   // A2 .. A6
+const CUT_MIN   = 80,  CUT_MAX   = 12000;  // Hz
+
+// ---------- DOM ----------
+const $ = id => document.getElementById(id);
+const video = $("video"), canvas = $("canvas"), ctx = canvas.getContext("2d");
+const statusEl = $("status");
+
+// ---------- State ----------
+let landmarker = null, stream = null;
+let facing = "user";          // "user" = front camera
+let swapHands = false;
+let quantize = false;
+let muted = false;
+let lastVideoTime = -1;
+let audio = null;
+
+// Hand-connection pairs for drawing a skeleton
+const CONNECTIONS = HandLandmarker.HAND_CONNECTIONS ?? [
+  [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]
+].map(([start,end]) => ({start,end}));
+
+// ---------- Helpers ----------
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// y=0 is top of frame; map so hand at top → max value, exponentially.
+const expMap = (y, lo, hi) => {
+  const t = clamp(1 - (y - 0.1) / 0.8, 0, 1);   // use the middle 80% of the frame
+  return lo * Math.pow(hi / lo, t);
+};
+const NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const midiOf = f => 69 + 12 * Math.log2(f / 440);
+const freqOf = m => 440 * Math.pow(2, (m - 69) / 12);
+const noteName = f => { const m = Math.round(midiOf(f)); return NOTES[m % 12] + (Math.floor(m / 12) - 1); };
+const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(1) + "k" : Math.round(f) + "";
+
+// ---------- Audio ----------
+function initAudio() {
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ac.createOscillator();
+  const sub = ac.createOscillator();          // sub-octave for weight
+  const subGain = ac.createGain();
+  const filter = ac.createBiquadFilter();
+  const amp = ac.createGain();
+  const master = ac.createGain();
+
+  osc.type = "sawtooth";
+  sub.type = "sine";
+  subGain.gain.value = 0.35;
+  filter.type = "lowpass";
+  filter.frequency.value = 2000;
+  filter.Q.value = 8;
+  amp.gain.value = 0;
+  master.gain.value = 0.5;
+
+  osc.connect(filter);
+  sub.connect(subGain).connect(filter);
+  filter.connect(amp).connect(master).connect(ac.destination);
+  osc.start(); sub.start();
+  return { ac, osc, sub, filter, amp, master };
+}
+
+function setPitch(f) {
+  const t = audio.ac.currentTime;
+  audio.osc.frequency.setTargetAtTime(f, t, quantize ? 0.01 : 0.03);
+  audio.sub.frequency.setTargetAtTime(f / 2, t, quantize ? 0.01 : 0.03);
+}
+function setCutoff(f) {
+  audio.filter.frequency.setTargetAtTime(f, audio.ac.currentTime, 0.04);
+}
+function setGate(on) {
+  const target = on && !muted ? 0.6 : 0;
+  audio.amp.gain.setTargetAtTime(target, audio.ac.currentTime, on ? 0.03 : 0.12);
+}
+
+// ---------- Camera ----------
+async function startCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }
+  });
+  video.srcObject = stream;
+  await video.play();
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  lastVideoTime = -1;
+}
+
+// ---------- MediaPipe ----------
+async function initLandmarker() {
+  const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+  const opts = delegate => ({
+    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    runningMode: "VIDEO",
+    numHands: 2,
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+  try {
+    return await HandLandmarker.createFromOptions(fileset, opts("GPU"));
+  } catch (e) {
+    console.warn("GPU delegate failed, using CPU", e);
+    return await HandLandmarker.createFromOptions(fileset, opts("CPU"));
+  }
+}
+
+// ---------- Main loop ----------
+function loop() {
+  requestAnimationFrame(loop);
+  if (video.readyState < 2) return;
+
+  const mirror = facing === "user";
+  const W = canvas.width, H = canvas.height;
+
+  // Draw the camera frame (mirrored for selfie view), darkened + red tint
+  ctx.save();
+  if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+  ctx.filter = "grayscale(1) brightness(0.45) contrast(1.2)";
+  ctx.drawImage(video, 0, 0, W, H);
+  ctx.restore();
+  ctx.filter = "none";
+  ctx.fillStyle = "rgba(120,0,0,0.18)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Guide lines for the active band (10%–90%)
+  ctx.strokeStyle = "rgba(225,6,0,0.18)";
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.1); ctx.lineTo(W, H * 0.1);
+  ctx.moveTo(0, H * 0.9); ctx.lineTo(W, H * 0.9);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+
+  const res = landmarker.detectForVideo(video, performance.now());
+
+  let right = null, left = null;
+  (res.landmarks || []).forEach((lm, i) => {
+    let label = res.handednesses?.[i]?.[0]?.categoryName
+             ?? res.handedness?.[i]?.[0]?.categoryName;
+    // MediaPipe labels assume a mirrored image. Our raw front-camera frames
+    // aren't mirrored, so the labels come out swapped — flip them back.
+    if (mirror) label = label === "Left" ? "Right" : "Left";
+    if (swapHands) label = label === "Left" ? "Right" : "Left";
+    const hand = { lm, label };
+    if (label === "Right" && !right) right = hand;
+    else if (label === "Left" && !left) left = hand;
+    else if (!right) right = hand; else if (!left) left = hand;
+  });
+
+  // Draw hands
+  for (const h of [right, left]) {
+    if (!h) continue;
+    const isR = h === right;
+    const px = p => (mirror ? (1 - p.x) : p.x) * W;
+    const py = p => p.y * H;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = isR ? "#e10600" : "#ff6a5c";
+    ctx.shadowColor = "#e10600"; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    for (const c of CONNECTIONS) {
+      const a = h.lm[c.start], b = h.lm[c.end];
+      ctx.moveTo(px(a), py(a)); ctx.lineTo(px(b), py(b));
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    for (const p of h.lm) { ctx.beginPath(); ctx.arc(px(p), py(p), 3, 0, Math.PI * 2); ctx.fill(); }
+    // Control point = middle-finger knuckle (landmark 9): stable palm center
+    const c = h.lm[9];
+    ctx.beginPath();
+    ctx.arc(px(c), py(c), 14, 0, Math.PI * 2);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#e10600";
+    ctx.font = "bold 18px monospace";
+    ctx.fillText(isR ? "PITCH" : "FILTER", px(c) + 20, py(c) + 6);
+  }
+
+  // Right hand → pitch (gate)
+  if (right) {
+    let f = expMap(right.lm[9].y, PITCH_MIN, PITCH_MAX);
+    if (quantize) f = freqOf(Math.round(midiOf(f)));
+    setPitch(f);
+    setGate(true);
+    $("pitchVal").textContent = `${noteName(f)} ${fmtHz(f)}Hz`;
+    $("pitchVal").classList.remove("off");
+    $("meterR").style.height = (100 * Math.log(f / PITCH_MIN) / Math.log(PITCH_MAX / PITCH_MIN)) + "%";
+  } else {
+    setGate(false);
+    $("pitchVal").classList.add("off");
+    $("meterR").style.height = "0%";
+  }
+
+  // Left hand → lowpass cutoff (holds last value when hand leaves)
+  if (left) {
+    const f = expMap(left.lm[9].y, CUT_MIN, CUT_MAX);
+    setCutoff(f);
+    $("cutoffVal").textContent = `${fmtHz(f)}Hz`;
+    $("cutoffVal").classList.remove("off");
+    $("meterL").style.height = (100 * Math.log(f / CUT_MIN) / Math.log(CUT_MAX / CUT_MIN)) + "%";
+  } else {
+    $("cutoffVal").classList.add("off");
+  }
+}
+
+// ---------- UI ----------
+$("start").onclick = async () => {
+  const btn = $("start");
+  btn.disabled = true;
+  try {
+    audio = initAudio();                 // must happen inside the tap
+    await audio.ac.resume();
+    statusEl.textContent = "Starting camera…";
+    await startCamera();
+    statusEl.textContent = "Loading hand model…";
+    landmarker = await initLandmarker();
+    $("overlay").style.display = "none";
+    loop();
+  } catch (e) {
+    console.error(e);
+    statusEl.textContent = "Error: " + (e.message || e);
+    btn.disabled = false;
+  }
+};
+
+$("wave").onchange = e => { if (audio) audio.osc.type = e.target.value; };
+
+$("quantBtn").onclick = e => {
+  quantize = !quantize;
+  e.target.textContent = "Snap: " + (quantize ? "On" : "Off");
+  e.target.classList.toggle("on", quantize);
+};
+$("swapBtn").onclick = e => {
+  swapHands = !swapHands;
+  e.target.classList.toggle("on", swapHands);
+};
+$("camBtn").onclick = async () => {
+  facing = facing === "user" ? "environment" : "user";
+  try { await startCamera(); } catch (e) { console.error(e); }
+};
+$("muteBtn").onclick = e => {
+  muted = !muted;
+  e.target.textContent = muted ? "Unmute" : "Mute";
+  e.target.classList.toggle("on", muted);
+  if (muted && audio) setGate(false);
+};
+
+// Resume audio if the browser suspended it (e.g. after switching tabs)
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && audio) audio.ac.resume();
+});
+</script>
+</body>
+</html>
