@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Hand Synth</title>
+<title>HANDSYNTH — LIVE.AND.DIE</title>
 <style>
   :root {
     --red: #ff2238;
@@ -59,8 +59,8 @@
   }
   #hud .label { color: var(--mute); font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
   #hud .val { font-size: 19px; font-weight: 700; }
-  #hud .val.red  { color: var(--red);  text-shadow: 0 0 10px rgba(255,34,56,.6); }
-  #hud .val.blue { color: var(--blue); text-shadow: 0 0 10px rgba(31,139,255,.6); }
+  #hud .val.red  { color: var(--red);  text-shadow: 0 0 10px rgba(255,0,0,.6); }
+  #hud .val.blue { color: var(--blue); text-shadow: 0 0 10px rgba(58,58,255,.6); }
   #hud .val.off { color: #333a48; text-shadow: none; }
   #hud .mid { text-align: center; }
   #hud .mid .val2 { font-size: 11px; color: var(--fg); margin: 2px 0; }
@@ -110,21 +110,21 @@
   }
   select { border-color: var(--red-dim); }
   button:active { background: var(--blue-dim); }
-  button.on { border-color: var(--blue); color: var(--blue); box-shadow: 0 0 8px rgba(31,139,255,.35); }
-  #muteBtn.on { border-color: var(--red); color: var(--red); box-shadow: 0 0 8px rgba(255,34,56,.35); }
+  button.on { border-color: var(--blue); color: var(--blue); box-shadow: 0 0 8px rgba(58,58,255,.35); }
+  #muteBtn.on { border-color: var(--red); color: var(--red); box-shadow: 0 0 8px rgba(255,0,0,.35); }
 
   #overlay {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 16px; text-align: center;
     background:
-      repeating-linear-gradient(90deg, rgba(31,139,255,.05) 0 1px, transparent 1px 32px),
-      repeating-linear-gradient(0deg, rgba(31,139,255,.05) 0 1px, transparent 1px 32px),
+      repeating-linear-gradient(90deg, rgba(58,58,255,.05) 0 1px, transparent 1px 32px),
+      repeating-linear-gradient(0deg, rgba(58,58,255,.05) 0 1px, transparent 1px 32px),
       radial-gradient(circle at center, #0a0418 0%, #000 70%);
     padding: 24px; z-index: 10; overflow-y: auto;
   }
   #overlay h1 {
     font-size: 34px; letter-spacing: .3em; color: var(--fg);
-    text-shadow: -3px 0 var(--blue), 3px 0 var(--red), 0 0 28px rgba(255,34,56,.5);
+    text-shadow: -3px 0 var(--blue), 3px 0 var(--red), 0 0 28px rgba(255,0,0,.5);
   }
   #overlay .map { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 720px; }
   #overlay .map div {
@@ -140,15 +140,123 @@
   #start {
     font-size: 15px; padding: 14px 40px; border: 2px solid var(--red);
     color: var(--fg); background: transparent; border-radius: 40px;
-    box-shadow: -3px 0 14px rgba(31,139,255,.5), 3px 0 14px rgba(255,34,56,.5);
+    box-shadow: -3px 0 14px rgba(58,58,255,.5), 3px 0 14px rgba(255,0,0,.5);
   }
   #start:disabled { opacity: .5; }
   #status { color: var(--blue); font-size: 12px; min-height: 1.2em; }
   .home { color: var(--red); font-size: 12px; letter-spacing: .1em; padding: 12px 16px; }
+
+  /* ================= liveanddie.xyz skin =================
+     Every value is taken from the site (liveanddie/lad.css) and MOSH (mosh/style.css): the
+     --r/--r2/--r3 reds, --b/--b2/--b3 blues, Times + Courier New, the .ol hard outline, double-red
+     .body blocks, .tbl rows, nav-cell buttons, link hover (blue, black text), the inv blink and
+     the scanlines. Overrides the rules above; layout logic and the app itself are unchanged. */
+  :root {
+    --r: #ff0000; --r2: #aa0000; --r3: #4a0000; --b: #3a3aff; --b2: #2222cc; --b3: #101060;
+    --sf: "Times New Roman", Times, "Liberation Serif", serif; --tt: "Courier New", monospace;
+    --ol: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 2px 2px 0 #000;
+    --red: var(--r); --red-dim: var(--r3); --blue: var(--b); --blue-dim: var(--b3); --fg: var(--b); --mute: var(--r2);
+  }
+  @keyframes inv { 0%, 49% { background: var(--r); color: #000; } 50%, 100% { background: var(--b); color: #000; } }
+  html, body { font-family: var(--tt); color: var(--b); }
+
+  /* the site's grid + cube, drawn once, dim, behind everything */
+  #sitebg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .35; display: block; pointer-events: none; }
+  /* the camera view, framed like the site's video blocks: red border, caption bar underneath */
+  #stage {
+    inset: max(6px, env(safe-area-inset-top)) 6px var(--bottomH, 190px) 6px; z-index: 0;
+    border: 2px solid var(--r); border-bottom: 0; background: #000;
+  }
+  #fx { background: repeating-linear-gradient(0deg, rgba(0,0,0,.4) 0 1px, transparent 1px 3px); opacity: .45; }
+
+  .meter { border-radius: 0; background: #000; border-color: var(--b3); }
+  .meter.right { border-color: var(--r3); }
+  .meter.left > div { background: var(--b); box-shadow: none; }
+  .meter.right > div { background: var(--r); box-shadow: none; }
+
+  #hud { padding: max(10px, calc(env(safe-area-inset-top) + 4px)) 30px 10px; background: linear-gradient(to bottom, rgba(0,0,0,.85), transparent); }
+  #hud .label { color: var(--r2); font: 700 10px var(--tt); letter-spacing: .08em; }
+  #hud .val { font: 700 19px var(--sf); text-shadow: var(--ol); }
+  #hud .val.red { color: var(--r); text-shadow: var(--ol); }
+  #hud .val.blue { color: var(--b); text-shadow: var(--ol); }
+  #hud .val.off { color: var(--b3); text-shadow: none; }
+  #hud .mid .val2 { font: 10px var(--tt); color: var(--b); }
+  #hud .mid .val2.lock { color: var(--r); }
+
+  /* data panels: the site's .tbl, dense */
+  .panel { background: rgba(0,0,0,.82); border: 1px solid var(--b3); border-radius: 0; padding: 0 0 4px; font: 10px var(--tt); }
+  .panel.red { border-color: var(--r3); }
+  .panel.face { border-image: none; border: 1px solid var(--r); }
+  .panel h3, .panel.red h3, .panel.face h3 {
+    font: 700 10px var(--tt); letter-spacing: .06em; margin: 0 0 2px; padding: 1px 5px;
+    background: var(--r3); color: var(--r); -webkit-background-clip: border-box; background-clip: border-box;
+  }
+  .panel .row { margin: 2px 5px 0; }
+  .row .k { color: var(--b); } .row .k em { color: var(--r2); } .row .v { color: var(--r); }
+  .row .bar { background: var(--r3); }
+  .row .bar i, .panel.red .row .bar i, .panel.face .row .bar i { background: var(--b); box-shadow: none; }
+  .panel.red .row .bar i, .panel.face .row .bar i { background: var(--r); }
+
+  /* the bottom: caption bar under the camera, scope, controls as nav cells */
+  #bottom { background: #000; padding: 0 6px max(8px, env(safe-area-inset-bottom)); }
+  .cap { display: flex; justify-content: space-between; gap: 8px; background: var(--r); color: #000; font: 700 10px var(--tt); padding: 1px 6px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; }
+  #scope { border: 1px solid var(--b3); background: #000; margin-bottom: 6px; }
+  #controls { gap: 3px; }
+  button, select {
+    font: 10px var(--tt); text-transform: uppercase; letter-spacing: .04em; color: var(--r);
+    background: #000; border: 1px solid var(--b3); border-radius: 0; min-height: 40px; padding: 0 10px; box-shadow: none;
+  }
+  select { border-color: var(--r3); }
+  select option { background: #000; color: var(--r); }
+  button:hover, button:active { background: var(--b); color: #000; }
+  button.on { background: var(--b); border-color: var(--b); color: #000; box-shadow: none; }
+  #muteBtn.on { background: var(--r); border-color: var(--r); color: #000; box-shadow: none; }
+
+  /* the start screen: the site's portal look over the dim grid */
+  #overlay { background: rgba(0,0,0,.7); font-family: var(--sf); gap: 12px; }
+  #overlay .corp { font: 700 10px var(--sf); letter-spacing: .15em; color: var(--r); }
+  #overlay h1 {
+    font: italic 700 clamp(40px, 12vw, 72px)/1 var(--sf); letter-spacing: .02em; color: var(--r);
+    text-shadow: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 2px 2px 0 #000, 5px 5px 0 var(--b);
+  }
+  #overlay .tag { font: italic 11px var(--sf); color: var(--b); text-shadow: 1px 1px 0 #000, 2px 2px 0 #000; }
+  #overlay .map { gap: 6px; }
+  #overlay .map div { background: #000; border: 2px solid var(--b); border-radius: 0; color: var(--b); font: 11px/1.5 var(--sf); padding: 0 10px 6px; text-align: left; }
+  #overlay .map div.r { border-color: var(--r); }
+  #overlay .map div.f { border: 3px double var(--r); }
+  #overlay .map b, #overlay .map .r b, #overlay .map .l b, #overlay .map .f b {
+    display: block; margin: 0 -10px 4px; padding: 1px 8px; font: 700 10px var(--tt); letter-spacing: .08em;
+    background: var(--r3); color: var(--r); -webkit-background-clip: border-box; background-clip: border-box;
+  }
+  #overlay .map .l b { background: var(--b3); color: var(--b); }
+  #overlay .hint { font: 10px var(--tt); color: var(--r2); }
+  #start {
+    font: italic 700 20px var(--sf); letter-spacing: .2em; color: var(--r); background: #000;
+    border: 3px double var(--r); border-radius: 0; box-shadow: none; min-height: 48px; padding: 0 44px; text-shadow: var(--ol);
+  }
+  #start:hover:not(:disabled), #start:active:not(:disabled) { background: var(--r); color: #000; text-shadow: none; }
+  #start:disabled { opacity: 1; animation: inv .8s steps(1) infinite; color: #000; text-shadow: none; }   /* blinks while loading */
+  #status { font: 11px var(--tt); color: var(--b); }
+  .home { display: inline-flex; align-items: center; min-height: 40px; font: 700 11px var(--tt); color: var(--r); text-decoration: underline; }
+  .home:hover { background: var(--b); color: #000; text-decoration: none; }
+  @media (prefers-reduced-motion: reduce) { #start:disabled { animation: none; background: var(--r); } }
 </style>
+<meta name="description" content="HANDSYNTH, an instrument unit from LIVE.AND.DIE PRODUCTIONS. The customer's hands and face, played through the camera. Runs on your own device. Nothing is uploaded.">
+<meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="LIVE.AND.DIE">
+<meta property="og:title" content="HANDSYNTH — LIVE.AND.DIE PRODUCTIONS">
+<meta property="og:description" content="Instrument unit. The customer's hands and face, played through the camera. Runs on your own device. Feelings sold separately.">
+<meta property="og:url" content="https://liveanddie247.github.io/handsynth/">
+<meta property="og:image" content="https://liveanddie247.github.io/handsynth/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="HANDSYNTH: two tracked hands, red and blue, over the LIVE.AND.DIE grid">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body>
 
+<canvas id="sitebg" aria-hidden="true"></canvas>
 <div id="stage"><canvas id="canvas"></canvas></div>
 <video id="video" playsinline muted></video>
 <div id="fx"></div>
@@ -179,6 +287,7 @@
 </div>
 
 <div id="bottom">
+  <div class="cap"><span>CAM-01 · HANDSYNTH · LIVE INPUT</span><span>LIVE.AND.DIE PRODUCTIONS</span></div>
   <canvas id="scope"></canvas>
   <div id="controls">
     <select id="preset" title="Preset"></select>
@@ -211,7 +320,9 @@
 </div>
 
 <div id="overlay">
-  <h1>HAND SYNTH</h1>
+  <div class="corp">LIVE.AND.DIE PRODUCTIONS ¤ EQUIPMENT DEPARTMENT ¤ INSTRUMENT UNIT</div>
+  <h1>HANDSYNTH</h1>
+  <div class="tag">the customer's hands and face, played through the camera. nothing leaves the device.</div>
   <div class="map">
     <div class="r"><b>RIGHT HAND · VOICE</b>
       height → pitch<br>side to side → pan<br>thumb–index pinch → vibrato<br>
@@ -223,7 +334,7 @@
       open mouth → talk-box vowel<br>smile → vowel brightness<br>pucker → "oo"<br>
       raise brows → vibrato speed<br>tilt head → pitch bend</div>
   </div>
-  <p style="color:#5d6880;font-size:11px">Curl a finger to turn its control down, straighten it to turn it up.<br>Sound plays while your right hand is in view.</p>
+  <p class="hint">Curl a finger to turn its control down, straighten it to turn it up.<br>Sound plays while your right hand is in view.</p>
   <button id="start">Start</button>
   <div id="status"></div>
   <a class="home" href="https://liveanddie.xyz/">← liveanddie.xyz</a>
@@ -237,7 +348,7 @@ const WASM_URL   = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14
 const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const FACE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-const RED = "#ff2238", BLUE = "#1f8bff", BLUE_HI = "#7cc4ff";
+const RED = "#ff0000", BLUE = "#3a3aff", BLUE_HI = "#3a3aff";   // liveanddie.xyz --r / --b
 const CUT_MIN = 80, CUT_MAX = 12000;
 const K = 2;   // canvas supersampling for crisp wireframes
 
@@ -635,7 +746,7 @@ function updateReadouts() {
 }
 
 // ---------- Drawing ----------
-const FONT = "10px ui-monospace, Menlo, monospace";
+const FONT = "10px 'Courier New', monospace";
 
 function tag(x, y, txt, col) {
   ctx.font = FONT;
@@ -675,11 +786,11 @@ function drawBackground(t) {
   ctx.filter = "grayscale(1) contrast(1.25) brightness(.6)";
   ctx.drawImage(video, 0, 0, W, H);
   ctx.restore();
-  ctx.fillStyle = "rgba(0,14,48,.5)";
+  ctx.fillStyle = "rgba(0,0,0,.45)";
   ctx.fillRect(0, 0, W, H);
 
   // Grid
-  ctx.strokeStyle = "rgba(31,139,255,.08)"; ctx.lineWidth = .5;
+  ctx.strokeStyle = "rgba(58,58,255,.08)"; ctx.lineWidth = .5;
   ctx.beginPath();
   for (let x = 0; x <= W; x += 32) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
   for (let y = 0; y <= H; y += 32) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
@@ -687,16 +798,16 @@ function drawBackground(t) {
 
   // Active band guides (10%–90%)
   ctx.setLineDash([6, 8]);
-  ctx.strokeStyle = "rgba(255,34,56,.25)";
+  ctx.strokeStyle = "rgba(255,0,0,.25)";
   ctx.beginPath(); ctx.moveTo(0, H * .1); ctx.lineTo(W, H * .1); ctx.stroke();
-  ctx.strokeStyle = "rgba(31,139,255,.3)";
+  ctx.strokeStyle = "rgba(58,58,255,.3)";
   ctx.beginPath(); ctx.moveTo(0, H * .9); ctx.lineTo(W, H * .9); ctx.stroke();
   ctx.setLineDash([]);
 
   // Sweeping scan line
   const sy = (t * .05) % H;
   const g = ctx.createLinearGradient(0, sy - 30, 0, sy);
-  g.addColorStop(0, "rgba(31,139,255,0)"); g.addColorStop(1, "rgba(31,139,255,.18)");
+  g.addColorStop(0, "rgba(58,58,255,0)"); g.addColorStop(1, "rgba(58,58,255,.18)");
   ctx.fillStyle = g; ctx.fillRect(0, sy - 30, W, 30);
 }
 
@@ -719,18 +830,18 @@ function drawFace(lm) {
   // Dark mask with scanlines over the face
   ctx.save();
   poly(FACE_OVAL);
-  ctx.fillStyle = "rgba(0,6,26,.8)"; ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,.8)"; ctx.fill();
   ctx.clip();
-  ctx.strokeStyle = "rgba(31,139,255,.12)"; ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(58,58,255,.12)"; ctx.lineWidth = 1;
   ctx.beginPath();
   for (let y = y0; y < y1; y += 3) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
   ctx.stroke();
   ctx.restore();
 
   // Wire mesh
-  ctx.lineWidth = .5; ctx.strokeStyle = "rgba(31,139,255,.55)";
+  ctx.lineWidth = .5; ctx.strokeStyle = "rgba(58,58,255,.55)";
   edges(TESS);
-  ctx.fillStyle = "rgba(140,200,255,.9)";
+  ctx.fillStyle = "rgba(58,58,255,.9)";
   for (let i = 0; i < Math.min(468, lm.length); i += 2) ctx.fillRect(X(i) - .6, Y(i) - .6, 1.2, 1.2);
 
   // Contours
@@ -748,12 +859,12 @@ function drawFace(lm) {
   ctx.save();
   ctx.shadowColor = RED; ctx.shadowBlur = 10;
   poly(LIPS_OUT);
-  ctx.fillStyle = `rgba(255,34,56,${.2 + F.open * .45})`; ctx.fill();
+  ctx.fillStyle = `rgba(255,0,0,${.2 + F.open * .45})`; ctx.fill();
   ctx.strokeStyle = RED; ctx.lineWidth = 1.6; ctx.stroke();
   ctx.restore();
   poly(LIPS_IN);
   ctx.fillStyle = "rgba(0,0,0,.85)"; ctx.fill();
-  ctx.strokeStyle = "#ff7a88"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = "#aa0000"; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = "#fff";
   for (const i of [...LIPS_OUT, ...LIPS_IN]) ctx.fillRect(X(i) - 1, Y(i) - 1, 2, 2);
 
@@ -779,7 +890,7 @@ function drawFace(lm) {
   const colW = 104;
   const lx = x1 + pad + 14 + colW < W ? x1 + pad + 14 : Math.max(2, x0 - pad - 14 - colW);
   const mx = lx > x1 ? lx : lx + colW;
-  ctx.strokeStyle = "rgba(255,34,56,.5)"; ctx.lineWidth = .8;
+  ctx.strokeStyle = "rgba(255,0,0,.5)"; ctx.lineWidth = .8;
   ctx.beginPath(); ctx.moveTo(X(lx > x1 ? 291 : 61), Y(291)); ctx.lineTo(mx, y0 + 6); ctx.stroke();
   rows.forEach(([k, v, txt], i) => {
     const y = y0 + 6 + i * 18;
@@ -803,7 +914,7 @@ function drawHand(h, isR) {
   tag(x0 - pad, y0 - pad - 6, `${isR ? "R.HAND // VOICE" : "L.HAND // TONE"} ${Math.round(h.score * 100)}%`, col);
 
   // Wire web: palm base to every joint
-  ctx.strokeStyle = isR ? "rgba(255,34,56,.18)" : "rgba(31,139,255,.22)"; ctx.lineWidth = .5;
+  ctx.strokeStyle = isR ? "rgba(255,0,0,.18)" : "rgba(58,58,255,.22)"; ctx.lineWidth = .5;
   ctx.beginPath();
   for (const b of [0, 5, 9, 13, 17]) for (let i = 1; i < 21; i++) {
     if (i === b) continue;
@@ -860,7 +971,7 @@ function drawScope() {
 
   // Spectrum: log-spaced blue bars
   const bars = 72, bw = w / bars;
-  sctx.fillStyle = "rgba(31,139,255,.55)";
+  sctx.fillStyle = "rgba(58,58,255,.55)";
   for (let i = 0; i < bars; i++) {
     const idx = Math.floor(Math.pow(fBuf.length, i / bars));
     const v = fBuf[Math.min(idx, fBuf.length - 1)] / 255;
@@ -978,6 +1089,42 @@ $("muteBtn").onclick = e => {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && audio) audio.ac.resume();
 });
+</script>
+<script>
+// Skin helpers only (no part of the synth): keep the framed camera view above the bottom bar,
+// and draw the liveanddie.xyz grid + cube once (not animated, so it costs nothing per frame).
+(function () {
+  const bottom = document.getElementById("bottom");
+  const setH = () => document.documentElement.style.setProperty("--bottomH", bottom.offsetHeight + "px");
+  if (window.ResizeObserver) new ResizeObserver(setH).observe(bottom);
+  setH();
+  const c = document.getElementById("sitebg"), g = c.getContext("2d");
+  function draw() {
+    const W = c.width = innerWidth, H = c.height = innerHeight;
+    g.strokeStyle = "rgba(255,0,0,.4)"; g.lineWidth = 1;
+    const hz = H * .55, vx = W / 2;
+    g.beginPath();
+    for (let i = -12; i <= 12; i++) { const x0 = vx + i * W * .09; g.moveTo(vx, hz); g.lineTo(x0 + (x0 - vx) * 3, H); g.moveTo(vx, hz); g.lineTo(x0 + (x0 - vx) * 3, 0); }
+    for (let n = 0; n < 14; n++) { const yy = hz + Math.pow(n / 14, 2.2) * (H - hz); g.moveTo(0, yy); g.lineTo(W, yy); }
+    g.moveTo(0, hz); g.lineTo(W, hz); g.stroke();
+    g.strokeStyle = "rgba(60,60,255,.8)";
+    const a = .6, b = .4, s = Math.min(W, H) * .09, cx = W * .5, cy = hz - s * 1.6, P = [];
+    for (let i = 0; i < 8; i++) {
+      const x = i & 1 ? 1 : -1, y = i & 2 ? 1 : -1, z = i & 4 ? 1 : -1;
+      const x1 = x * Math.cos(a) - z * Math.sin(a); let z1 = x * Math.sin(a) + z * Math.cos(a);
+      const y1 = y * Math.cos(b) - z1 * Math.sin(b); z1 = y * Math.sin(b) + z1 * Math.cos(b);
+      const f = 2.6 / (3.6 + z1); P.push([cx + x1 * s * f, cy + y1 * s * f]);
+    }
+    g.beginPath();
+    for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) { const d = i ^ j; if (d === 1 || d === 2 || d === 4) { g.moveTo(P[i][0], P[i][1]); g.lineTo(P[j][0], P[j][1]); } }
+    g.stroke();
+    const gr = g.createRadialGradient(W / 2, H / 2, H * .2, W / 2, H / 2, H * .9);
+    gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.88)");
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  }
+  draw();
+  addEventListener("resize", draw);
+})();
 </script>
 </body>
 </html>
